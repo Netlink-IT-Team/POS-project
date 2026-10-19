@@ -90,7 +90,7 @@ create table transactions (
 create table transaction_items (
     id uuid primary key default uuid_generate_v4(),
     transaction_id uuid not null references transactions(id) on delete cascade,
-    product_id uuid not null references menu(id),
+    menu_id uuid not null references menu(id),
     quantity integer not null check (quantity > 0),
     price_per_unit numeric(12, 2) not null check (price_per_unit >= 0),
     subtotal numeric(12, 2) not null check (subtotal >= 0),
