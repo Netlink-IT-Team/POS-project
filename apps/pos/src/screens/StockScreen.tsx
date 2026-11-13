@@ -13,6 +13,12 @@ export interface StockScreenProps {
   onToggleOnline: () => void;
   boothName: string;
   cashierName: string;
+  stocks?: BoothStockRecord[];
+  setStocks?: React.Dispatch<React.SetStateAction<BoothStockRecord[]>>;
+  pendingSyncCount?: number;
+  onTriggerSync?: () => void;
+  onOpenShiftAudit?: () => void;
+  onOpenHistory?: () => void;
 }
 
 export const StockScreen: React.FC<StockScreenProps> = ({
@@ -20,8 +26,31 @@ export const StockScreen: React.FC<StockScreenProps> = ({
   onToggleOnline,
   boothName,
   cashierName,
+  stocks: propStocks,
+  setStocks: propSetStocks,
+  pendingSyncCount = 0,
+  onTriggerSync,
+  onOpenShiftAudit,
+  onOpenHistory,
 }) => {
-  const [stocks, setStocks] = useState<BoothStockRecord[]>(INITIAL_STOCKS);
+  const [localStocks, setLocalStocks] = useState<BoothStockRecord[]>(() => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const stored = window.localStorage.getItem('kopiko_booth_stocks_v1');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+    return INITIAL_STOCKS;
+  });
+  const stocks = propStocks ?? localStocks;
+  const setStocks = propSetStocks ?? setLocalStocks;
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | StockCategoryEnum>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'safe' | 'warning' | 'out_of_stock'>('all');
@@ -111,11 +140,32 @@ export const StockScreen: React.FC<StockScreenProps> = ({
   };
 
   const handleAddNewStockDirect = () => {
-    // Open modal with the first item or show picker
-    if (stocks.length > 0) {
-      setSelectedStockItem(stocks[0]);
+    // Prioritaskan item yang sudah di bawah batas minimum atau kosong
+    const urgentItem = stocks.find((s) => s.quantity <= s.min_threshold) || stocks[0];
+    if (urgentItem) {
+      setSelectedStockItem(urgentItem);
       setIsAdjustModalOpen(true);
     }
+  };
+
+  const handleRefreshStock = () => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const stored = window.localStorage.getItem('kopiko_booth_stocks_v1');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setStocks(parsed);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[StockScreen] Gagal memuat ulang storage:', e);
+    }
+    Alert.alert(
+      'Data Stok Terkini',
+      'Data stok teranyar berhasil disinkronkan. Riwayat restock dan pengurangan resep otomatis tetap tersimpan aman.'
+    );
   };
 
   const handleExportSummary = () => {
@@ -134,6 +184,10 @@ export const StockScreen: React.FC<StockScreenProps> = ({
         isOnline={isOnline}
         cashierName={cashierName}
         onToggleOnline={onToggleOnline}
+        pendingSyncCount={pendingSyncCount}
+        onTriggerSync={onTriggerSync}
+        onOpenShiftAudit={onOpenShiftAudit}
+        onOpenHistory={onOpenHistory}
       />
 
       {/* 2. Main Scrollable Container */}
@@ -153,10 +207,7 @@ export const StockScreen: React.FC<StockScreenProps> = ({
 
           <View style={styles.bannerActions}>
             <Pressable
-              onPress={() => {
-                setStocks([...INITIAL_STOCKS]);
-                Alert.alert('Data Disinkronkan', 'Data stok teranyar berhasil ditarik.');
-              }}
+              onPress={handleRefreshStock}
               style={({ pressed }) => [styles.btnSecondary, pressed && { opacity: 0.7 }]}
               hitSlop={8}
             >
@@ -289,6 +340,7 @@ export const StockScreen: React.FC<StockScreenProps> = ({
       <StockAdjustModal
         visible={isAdjustModalOpen}
         item={selectedStockItem}
+        allItems={stocks}
         onClose={() => setIsAdjustModalOpen(false)}
         onSave={handleSaveStock}
       />
