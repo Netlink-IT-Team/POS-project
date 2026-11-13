@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, Pressable, Animated } from 'react-native';
 import { COLORS, RADII } from '../constants/theme';
+import { api } from '../services/api';
 
 export interface CashierProfile {
   id: string;
@@ -44,12 +45,26 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       // Auto check when 4 digits reached
       if (newPin.length === 4) {
-        if (newPin === selectedCashier.pin) {
-          onLoginSuccess(selectedCashier);
-        } else {
-          setErrorMessage('PIN Salah. Coba lagi (Demo PIN: 1234)');
-          setTimeout(() => setPin(''), 600);
-        }
+        // Try Go Backend login first
+        api.login(newPin, selectedCashier.boothName)
+          .then((res) => {
+            onLoginSuccess({
+              id: res.profile.id,
+              name: res.profile.full_name,
+              role: res.profile.role,
+              pin: newPin,
+              boothName: res.booth.name,
+            });
+          })
+          .catch(() => {
+            // Local fallback validation if backend is offline
+            if (newPin === selectedCashier.pin) {
+              onLoginSuccess(selectedCashier);
+            } else {
+              setErrorMessage('PIN Salah. Coba lagi (Demo PIN: 1234)');
+              setTimeout(() => setPin(''), 600);
+            }
+          });
       }
     }
   };

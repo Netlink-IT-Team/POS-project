@@ -73,6 +73,7 @@ export const StockTable: React.FC<StockTableProps> = ({ stocks, onOpenAdjust }) 
         <ScrollView style={styles.tableBodyScroll} showsVerticalScrollIndicator={false}>
           {stocks.map((item, index) => {
             const isOutOfStock = item.quantity === 0;
+            const isLowStock = item.quantity <= item.min_threshold;
             return (
               <View
                 key={item.id}
@@ -126,7 +127,11 @@ export const StockTable: React.FC<StockTableProps> = ({ stocks, onOpenAdjust }) 
                     onPress={() => onOpenAdjust(item)}
                     style={({ pressed }) => [
                       styles.actionBtn,
-                      isOutOfStock ? styles.actionBtnRestock : styles.actionBtnAdjust,
+                      isOutOfStock
+                        ? styles.actionBtnRestock
+                        : isLowStock
+                        ? styles.actionBtnRestockWarning
+                        : styles.actionBtnAdjust,
                       pressed && { opacity: 0.8 },
                     ]}
                     hitSlop={8}
@@ -135,10 +140,16 @@ export const StockTable: React.FC<StockTableProps> = ({ stocks, onOpenAdjust }) 
                       style={
                         isOutOfStock
                           ? styles.actionBtnTextRestock
+                          : isLowStock
+                          ? styles.actionBtnTextRestockWarning
                           : styles.actionBtnTextAdjust
                       }
                     >
-                      {isOutOfStock ? '+ Restock Masuk' : '⚙️ Sesuaikan'}
+                      {isOutOfStock
+                        ? '🚨 Restock Darurat'
+                        : isLowStock
+                        ? '+ Restock Masuk'
+                        : '+ Restock / Sesuaikan'}
                     </Text>
                   </Pressable>
                 </View>
@@ -315,6 +326,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.brandCrimson,
   },
   actionBtnTextRestock: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  actionBtnRestockWarning: {
+    backgroundColor: '#D97706',
+  },
+  actionBtnTextRestockWarning: {
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',

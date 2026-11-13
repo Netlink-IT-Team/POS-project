@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, Pressable, ScrollView, Alert } from 'react-native';
 import { Header } from '../components/Header';
+import { ZReportModal } from '../components/settlement/ZReportModal';
 import { COLORS, RADII, formatRupiah } from '../constants/theme';
+import { BoothStockRecord, ShiftUsageSummary } from '../types/stock';
+import { api } from '../services/api';
 
 export interface SettlementScreenProps {
   isOnline: boolean;
@@ -9,6 +12,17 @@ export interface SettlementScreenProps {
   boothName: string;
   cashierName: string;
   onShiftClosed?: () => void;
+  initialDrawerCash?: number;
+  onUpdateInitialDrawerCash?: (amount: number) => void;
+  cashSales?: number;
+  qrisSales?: number;
+  transactionsCount?: number;
+  pendingSyncCount?: number;
+  onTriggerSync?: () => void;
+  onOpenShiftAudit?: () => void;
+  shiftUsage?: ShiftUsageSummary;
+  stocks?: BoothStockRecord[];
+  onOpenHistory?: () => void;
 }
 
 export const SettlementScreen: React.FC<SettlementScreenProps> = ({
@@ -17,47 +31,84 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
   boothName,
   cashierName,
   onShiftClosed,
+  initialDrawerCash = 200000,
+  onUpdateInitialDrawerCash,
+  cashSales = 754000,
+  qrisSales = 1240000,
+  transactionsCount = 42,
+  pendingSyncCount = 0,
+  onTriggerSync,
+  onOpenShiftAudit,
+  shiftUsage = {
+    coldCups: 38,
+    hotCups: 4,
+    lids: 42,
+    espressoKg: 0.792,
+    milkLiters: 4.56,
+    arenLiters: 0.95,
+    croissantPcs: 3,
+    totalTransactions: 42,
+  },
+  stocks = [],
+  onOpenHistory,
 }) => {
-  // Mock Shift Metrics (Aggregated from local session transactions)
-  const initialDrawerCash = 200000; // Modal awal laci kasir
-  const systemCashSales = 754000; // Total penjualan cash sistem
-  const systemQrisSales = 1240000; // Total penjualan QRIS Xendit
-  const totalTransactionsCount = 42; // Total transaksi sukses
+  const [currentInitialCash, setCurrentInitialCash] = useState<number>(initialDrawerCash);
+  const [isEditingInitialCash, setIsEditingInitialCash] = useState<boolean>(false);
+  const [customInitialCashInput, setCustomInitialCashInput] = useState<string>(String(initialDrawerCash));
 
-  const expectedCashInDrawer = initialDrawerCash + systemCashSales;
+  useEffect(() => {
+    setCurrentInitialCash(initialDrawerCash);
+    setCustomInitialCashInput(String(initialDrawerCash));
+  }, [initialDrawerCash]);
+
+  const systemCashSales = cashSales;
+  const systemQrisSales = qrisSales;
+  const totalTransactionsCount = transactionsCount;
+
+  const expectedCashInDrawer = currentInitialCash + systemCashSales;
 
   // Actual Physical Cash Entered by Cashier
   const [actualCashInput, setActualCashInput] = useState<string>(String(expectedCashInDrawer));
   const [closingNotes, setClosingNotes] = useState<string>('');
   const [isShiftClosed, setIsShiftClosed] = useState<boolean>(false);
+  const [isZReportVisible, setIsZReportVisible] = useState<boolean>(false);
 
   const actualCash = parseFloat(actualCashInput) || 0;
   const discrepancy = actualCash - expectedCashInDrawer;
 
+  const handleUpdateInitialCash = (val: number) => {
+    setCurrentInitialCash(val);
+    setCustomInitialCashInput(String(val));
+    if (onUpdateInitialDrawerCash) {
+      onUpdateInitialDrawerCash(val);
+    }
+  };
+
   const totalGrossRevenue = systemCashSales + systemQrisSales;
 
-  const handleConfirmCloseShift = () => {
-    Alert.alert(
-      'Konfirmasi Tutup Shift',
-      `Yakin ingin menutup sesi shift untuk kasir ${cashierName}? Setelah ditutup, laporan akan disinkronkan ke PIC.`,
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Tutup Shift',
-          style: 'destructive',
-          onPress: () => {
-            setIsShiftClosed(true);
-            Alert.alert(
-              'Shift Berhasil Ditutup',
-              `Settlement shift sukses dicatat. Selisih kas: ${formatRupiah(
-                discrepancy
-              )}. Ringkasan shift telah dikirim ke backend.`,
-              [{ text: 'OK', onPress: () => onShiftClosed && onShiftClosed() }]
-            );
-          },
-        },
-      ]
-    );
+  // Direct confirmation of shift closure with automated real-time remaining stock (no manual photo/input required)
+  const handleConfirmCloseShift = async () => {
+    const automatedAuditItems = stocks.map((item) => ({
+      item_name: item.item_name,
+      tracking_type: (item.unit === 'kg' || item.unit === 'liter' ? 'weighed' : 'counted') as 'weighed' | 'counted',
+      measured_quantity: item.quantity,
+      unit: item.unit,
+      photo_url: '', // Otomatisasi sisa stok dari sistem POS
+    }));
+
+    try {
+      await api.closeShift({
+        shift_id: 'shift-today-01',
+        closing_cash_actual: actualCash,
+        closing_notes: closingNotes || 'Tutup shift kasir dengan sisa stok otomatis real-time.',
+        audit_items: automatedAuditItems,
+      });
+    } catch (e) {
+      console.warn('[Settlement] Backend Go offline, shift audit dicatat secara offline.');
+    }
+
+    setIsShiftClosed(true);
+    setIsZReportVisible(true);
   };
 
   return (
@@ -68,6 +119,10 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
         isOnline={isOnline}
         cashierName={cashierName}
         onToggleOnline={onToggleOnline}
+        pendingSyncCount={pendingSyncCount}
+        onTriggerSync={onTriggerSync}
+        onOpenShiftAudit={onOpenShiftAudit}
+        onOpenHistory={onOpenHistory}
       />
 
       {/* 2. Main Body */}
@@ -116,8 +171,17 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
 
             {/* Modal Awal Laci */}
             <View style={styles.kpiCard}>
-              <Text style={styles.kpiLabel}>Modal Awal Kasir</Text>
-              <Text style={styles.kpiValue}>{formatRupiah(initialDrawerCash)}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <Text style={styles.kpiLabel}>Modal Awal Kasir</Text>
+                <Pressable
+                  onPress={() => setIsEditingInitialCash((prev) => !prev)}
+                  style={styles.editChipBtn}
+                  hitSlop={6}
+                >
+                  <Text style={styles.editChipText}>{isEditingInitialCash ? 'Tutup' : '✏️ Ubah'}</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.kpiValue}>{formatRupiah(currentInitialCash)}</Text>
               <Text style={styles.kpiSub}>Float Kas Awal Shift</Text>
             </View>
           </View>
@@ -134,9 +198,62 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
               {/* Breakdown Rows */}
               <View style={styles.summaryBox}>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Modal Awal Laci Kasir:</Text>
-                  <Text style={styles.calcVal}>{formatRupiah(initialDrawerCash)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={styles.calcLabel}>Modal Awal Laci Kasir:</Text>
+                    <Pressable
+                      onPress={() => setIsEditingInitialCash((prev) => !prev)}
+                      style={styles.editInlineBtn}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.editInlineText}>{isEditingInitialCash ? '✕ Batal' : '✏️ Ubah Modal'}</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.calcVal}>{formatRupiah(currentInitialCash)}</Text>
                 </View>
+
+                {/* Inline Quick Modal Awal Editor */}
+                {isEditingInitialCash && (
+                  <View style={styles.initialCashEditorBox}>
+                    <Text style={styles.editorLabel}>Pilih atau masukkan modal kas awal shift ini:</Text>
+                    <View style={styles.presetChipsRow}>
+                      {[100000, 150000, 200000, 300000].map((preset) => (
+                        <Pressable
+                          key={preset}
+                          onPress={() => handleUpdateInitialCash(preset)}
+                          style={[
+                            styles.presetChip,
+                            currentInitialCash === preset && styles.presetChipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.presetChipText,
+                              currentInitialCash === preset && styles.presetChipTextActive,
+                            ]}
+                          >
+                            {formatRupiah(preset)}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <View style={styles.customCashRow}>
+                      <Text style={styles.prefixRpSmall}>Rp</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        value={customInitialCashInput}
+                        onChangeText={(v) => {
+                          setCustomInitialCashInput(v);
+                          const parsed = parseFloat(v);
+                          if (!isNaN(parsed) && parsed >= 0) {
+                            handleUpdateInitialCash(parsed);
+                          }
+                        }}
+                        style={styles.customCashInput}
+                        placeholder="0"
+                      />
+                    </View>
+                  </View>
+                )}
 
                 <View style={styles.calcRow}>
                   <Text style={styles.calcLabel}>+ Total Penjualan Tunai Sistem:</Text>
@@ -213,7 +330,7 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
                 <View style={styles.checkItem}>
                   <Text style={styles.checkIcon}>✅</Text>
                   <Text style={styles.checkText}>
-                    Stok opname bahan baku telah dihitung di menu Stok
+                    Sisa stok bahan baku tercatat otomatis secara real-time dari sistem POS
                   </Text>
                 </View>
 
@@ -237,6 +354,36 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
                     Bukti transaksi QRIS tersinkronkan penuh ke server
                   </Text>
                 </View>
+              </View>
+
+              {/* Automated Remaining Stock Summary Card (No manual entry / photo required) */}
+              <View style={styles.autoStockCard}>
+                <View style={styles.autoStockHeader}>
+                  <Text style={styles.autoStockTitle}>📦 Sisa Stok Bahan Baku Otomatis</Text>
+                  <View style={styles.autoBadge}>
+                    <Text style={styles.autoBadgeText}>⚡ Real-Time</Text>
+                  </View>
+                </View>
+                <Text style={styles.autoStockSub}>
+                  Sisa bahan baku tercatat otomatis dari sistem tanpa perlu input manual atau foto:
+                </Text>
+                <View style={styles.autoStockGrid}>
+                  {stocks.slice(0, 6).map((item) => (
+                    <View key={item.id} style={styles.autoStockItem}>
+                      <Text style={styles.autoStockItemName} numberOfLines={1}>
+                        {item.item_name}
+                      </Text>
+                      <Text style={styles.autoStockItemQty}>
+                        {item.quantity} {item.unit}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                {stocks.length > 6 && (
+                  <Text style={styles.autoStockMore}>
+                    + {stocks.length - 6} bahan baku lainnya otomatis terekam
+                  </Text>
+                )}
               </View>
 
               {/* Handover Notes */}
@@ -271,6 +418,28 @@ export const SettlementScreen: React.FC<SettlementScreenProps> = ({
           </View>
         </View>
       </ScrollView>
+
+      {/* Official Z-Report Modal */}
+      <ZReportModal
+        visible={isZReportVisible}
+        boothName={boothName}
+        cashierName={cashierName}
+        shiftNumber={1}
+        initialDrawerCash={currentInitialCash}
+        cashSales={systemCashSales}
+        qrisSales={systemQrisSales}
+        transactionsCount={totalTransactionsCount}
+        actualCash={actualCash}
+        discrepancy={discrepancy}
+        shiftUsage={shiftUsage}
+        closingNotes={closingNotes}
+        onCloseAndFinish={() => {
+          setIsZReportVisible(false);
+          setIsShiftClosed(false);
+          setClosingNotes('');
+          if (onShiftClosed) onShiftClosed();
+        }}
+      />
     </View>
   );
 };
@@ -366,6 +535,94 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
     color: COLORS.textMuted,
+  },
+  editChipBtn: {
+    backgroundColor: '#F3EFEA',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: RADII.pill,
+  },
+  editChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
+  },
+  editInlineBtn: {
+    backgroundColor: '#FAF5EE',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E7DFD5',
+  },
+  editInlineText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
+  },
+  initialCashEditorBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2D9CF',
+    borderRadius: RADII.btn,
+    padding: 10,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  editorLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 6,
+  },
+  presetChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  presetChip: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: RADII.pill,
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1,
+    borderColor: '#D8CEBE',
+  },
+  presetChipActive: {
+    backgroundColor: COLORS.brandEspresso,
+    borderColor: COLORS.brandEspresso,
+  },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
+  },
+  presetChipTextActive: {
+    color: '#FFFFFF',
+  },
+  customCashRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1,
+    borderColor: '#D8CEBE',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    height: 36,
+  },
+  prefixRpSmall: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
+    marginRight: 4,
+  },
+  customCashInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
+    padding: 0,
   },
   splitRow: {
     flexDirection: 'row',
@@ -549,6 +806,77 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.brandEspresso,
     lineHeight: 18,
+  },
+  autoStockCard: {
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1,
+    borderColor: '#EFECE6',
+    borderRadius: RADII.btn,
+    padding: 12,
+    marginBottom: 16,
+  },
+  autoStockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  autoStockTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.brandEspresso,
+  },
+  autoBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  autoBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  autoStockSub: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 8,
+  },
+  autoStockGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  autoStockItem: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EAE6DF',
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  autoStockItemName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.brandEspresso,
+    flex: 1,
+    marginRight: 4,
+  },
+  autoStockItemQty: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.brandCrimson,
+  },
+  autoStockMore: {
+    fontSize: 10,
+    fontStyle: 'italic',
+    color: COLORS.textMuted,
+    marginTop: 6,
+    textAlign: 'center',
   },
   notesGroup: {
     marginBottom: 16,

@@ -27,3 +27,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+
+# Go build binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+apps/backend/backend.exe

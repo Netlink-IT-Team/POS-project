@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, Modal, Pressable, ScrollView, Alert } from 'react-native';
+import { StyleSheet, Text, View, Modal, Pressable, ScrollView, Alert, Platform } from 'react-native';
 import { CartLineItem, PaymentMethod } from '../types';
 import { COLORS, RADII, formatRupiah } from '../constants/theme';
 
@@ -11,6 +11,9 @@ export interface ReceiptModalProps {
   subtotal: number;
   totalAmount: number;
   paymentMethod: PaymentMethod;
+  cashReceived?: number;
+  change?: number;
+  qrisRef?: string;
   cashierName: string;
   boothName: string;
   onCloseAndReset: () => void;
@@ -24,6 +27,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   subtotal,
   totalAmount,
   paymentMethod,
+  cashReceived = totalAmount,
+  change = 0,
+  qrisRef,
   cashierName,
   boothName,
   onCloseAndReset,
@@ -37,19 +43,59 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   });
 
   const handlePrint = () => {
-    Alert.alert(
-      'Mencetak Struk Fisik',
-      `Perintah cetak Bluetooth Thermal Printer terkirim untuk Pesanan #${orderNumber}.`,
-      [{ text: 'OK' }]
-    );
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.print();
+    } else {
+      Alert.alert(
+        'Mencetak Struk Fisik Thermal',
+        `Perintah cetak Bluetooth Thermal Printer terkirim untuk Pesanan #${orderNumber}.`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCloseAndReset}>
+      {/* Thermal Print Stylesheet for Web/Browser */}
+      {Platform.OS === 'web' && (
+        <style>{`
+          @media print {
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+            }
+            body * {
+              visibility: hidden !important;
+            }
+            #thermal-receipt-paper, #thermal-receipt-paper * {
+              visibility: visible !important;
+            }
+            #thermal-receipt-paper {
+              position: fixed !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 78mm !important;
+              max-width: 78mm !important;
+              margin: 0 auto !important;
+              padding: 4mm !important;
+              box-shadow: none !important;
+              border: none !important;
+              background: #ffffff !important;
+              color: #000000 !important;
+            }
+          }
+        `}</style>
+      )}
+
       <View style={styles.backdrop}>
         <View style={styles.receiptContainer}>
           {/* Thermal Paper Card */}
-          <View style={styles.paper}>
+          <View nativeID="thermal-receipt-paper" style={styles.paper}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.paperContent}>
               {/* Header Struk */}
               <View style={styles.brandHeader}>
@@ -61,23 +107,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
               <View style={styles.dashedDivider} />
 
+              {/* Large Queue Box (Barista Priority View) */}
+              <View style={styles.queueCallout}>
+                <Text style={styles.queueCalloutLabel}>NOMOR ANTREAN</Text>
+                <Text style={styles.queueCalloutNumber}>{queueNumber}</Text>
+              </View>
+
+              <View style={styles.dashedDivider} />
+
               {/* Order Info */}
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>No. Pesanan:</Text>
                 <Text style={styles.infoValue}>#{orderNumber}</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>No. Antrean:</Text>
-                <Text style={[styles.infoValue, { color: COLORS.brandCrimson }]}>
-                  {queueNumber}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Waktu:</Text>
+                <Text style={styles.infoLabel}>Waktu Transaksi:</Text>
                 <Text style={styles.infoValue}>{transactionTime} WIB</Text>
               </View>
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Kasir:</Text>
+                <Text style={styles.infoLabel}>Kasir Bertugas:</Text>
                 <Text style={styles.infoValue}>{cashierName}</Text>
               </View>
 
@@ -105,13 +153,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
               <View style={styles.dashedDivider} />
 
-              {/* Summary */}
+              {/* Financial Calculations */}
               <View style={styles.calcRow}>
-                <Text style={styles.calcLabel}>Subtotal</Text>
+                <Text style={styles.calcLabel}>Subtotal Produk</Text>
                 <Text style={styles.calcVal}>{formatRupiah(subtotal)}</Text>
               </View>
               <View style={styles.calcRow}>
-                <Text style={styles.calcLabel}>Pajak PB1 (10% Inc.)</Text>
+                <Text style={styles.calcLabel}>Pajak Restoran PB1 (Inc.)</Text>
                 <Text style={styles.calcVal}>Rp 0</Text>
               </View>
 
@@ -120,36 +168,66 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                 <Text style={styles.totalVal}>{formatRupiah(totalAmount)}</Text>
               </View>
 
+              {/* Payment Method Breakdown */}
               <View style={styles.calcRow}>
-                <Text style={styles.calcLabel}>Metode Bayar:</Text>
+                <Text style={styles.calcLabel}>Metode Pembayaran:</Text>
                 <Text style={styles.calcVal}>
                   {paymentMethod === 'qris' ? 'QRIS Dinamis (Xendit)' : 'Tunai (Cash)'}
                 </Text>
               </View>
-              <View style={styles.calcRow}>
-                <Text style={styles.calcLabel}>Status:</Text>
-                <Text style={[styles.calcVal, { color: COLORS.statusReady }]}>LUNAS (PAID)</Text>
-              </View>
+
+              {paymentMethod === 'cash' ? (
+                <>
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcLabel}>Uang Tunai Diterima:</Text>
+                    <Text style={styles.calcVal}>{formatRupiah(cashReceived)}</Text>
+                  </View>
+                  <View style={[styles.calcRow, styles.changeHighlightRow]}>
+                    <Text style={styles.changeLabelBold}>KEMBALIAN:</Text>
+                    <Text style={styles.changeValBold}>{formatRupiah(change)}</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcLabel}>Ref Transaksi QRIS:</Text>
+                    <Text style={styles.calcVal}>{qrisRef || `XND-${orderNumber}`}</Text>
+                  </View>
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcLabel}>Status Verifikasi:</Text>
+                    <Text style={[styles.calcVal, { color: COLORS.statusReady }]}>LUNAS (PAID)</Text>
+                  </View>
+                </>
+              )}
 
               <View style={styles.dashedDivider} />
 
-              {/* Barcode & Footer Message */}
+              {/* Barcode & Thermal Footer */}
               <View style={styles.barcodeSection}>
                 <Text style={styles.barcodeText}>||||| | ||||| |||| |||||| ||||| |||||</Text>
                 <Text style={styles.barcodeSub}>TRX-{Date.now().toString().slice(-8)}</Text>
                 <Text style={styles.thankyouText}>Terima kasih atas kunjungan Anda!</Text>
+                <Text style={styles.receiptFooterNotice}>
+                  Simpan struk fisik ini sebagai bukti pembelian yang sah.
+                </Text>
                 <Text style={styles.brandFooter}>www.kopiko.id • Layanan Konsumen: 1500-KPK</Text>
               </View>
             </ScrollView>
           </View>
 
-          {/* Action Buttons */}
+          {/* Touch-Friendly Action Buttons */}
           <View style={styles.actionsRow}>
-            <Pressable onPress={handlePrint} style={styles.btnPrint}>
-              <Text style={styles.btnPrintText}>🖨️ Cetak Struk</Text>
+            <Pressable
+              onPress={handlePrint}
+              style={({ pressed }) => [styles.btnPrint, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.btnPrintText}>🖨️ Cetak Struk Thermal</Text>
             </Pressable>
 
-            <Pressable onPress={onCloseAndReset} style={styles.btnNewOrder}>
+            <Pressable
+              onPress={onCloseAndReset}
+              style={({ pressed }) => [styles.btnNewOrder, pressed && { opacity: 0.9 }]}
+            >
               <Text style={styles.btnNewOrderText}>✓ Pesanan Baru</Text>
             </Pressable>
           </View>
@@ -168,13 +246,13 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   receiptContainer: {
-    width: 400,
-    maxHeight: '92%',
+    width: 420,
+    maxHeight: '94%',
   },
   paper: {
     backgroundColor: '#FFFFFF',
     borderRadius: RADII.btn,
-    padding: 24,
+    padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
@@ -186,7 +264,7 @@ const styles = StyleSheet.create({
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   brandTitle: {
     fontSize: 22,
@@ -205,11 +283,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#111111',
-    marginTop: 6,
+    marginTop: 4,
   },
   metaRowText: {
     fontSize: 10,
     color: '#666666',
+    marginTop: 2,
+  },
+  queueCallout: {
+    alignItems: 'center',
+    backgroundColor: '#F9F7F4',
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginVertical: 2,
+  },
+  queueCalloutLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#666666',
+    letterSpacing: 1,
+  },
+  queueCalloutNumber: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: COLORS.brandCrimson,
     marginTop: 2,
   },
   dashedDivider: {
@@ -217,7 +314,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#D1CAC3',
     borderStyle: 'dashed',
-    marginVertical: 12,
+    marginVertical: 10,
   },
   infoRow: {
     flexDirection: 'row',
@@ -299,13 +396,30 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   totalVal: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '900',
     color: '#000000',
   },
+  changeHighlightRow: {
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  changeLabelBold: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  changeValBold: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#15803D',
+  },
   barcodeSection: {
     alignItems: 'center',
-    paddingTop: 4,
+    paddingTop: 2,
   },
   barcodeText: {
     fontSize: 14,
@@ -317,16 +431,21 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#666666',
     marginTop: 2,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   thankyouText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#111111',
   },
-  brandFooter: {
+  receiptFooterNotice: {
     fontSize: 9,
     color: '#777777',
+    marginTop: 2,
+  },
+  brandFooter: {
+    fontSize: 8.5,
+    color: '#999999',
     marginTop: 4,
   },
   actionsRow: {
@@ -345,12 +464,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   btnPrintText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: COLORS.brandEspresso,
   },
   btnNewOrder: {
-    flex: 1.3,
+    flex: 1.2,
     height: 48,
     borderRadius: RADII.btn,
     backgroundColor: COLORS.brandCrimson,
@@ -363,9 +482,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   btnNewOrderText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
   },
 });
-
