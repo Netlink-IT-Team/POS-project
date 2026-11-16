@@ -7,6 +7,10 @@ export interface HeaderProps {
   isOnline: boolean;
   cashierName: string;
   onToggleOnline?: () => void;
+  pendingSyncCount?: number;
+  onTriggerSync?: () => void;
+  onOpenShiftAudit?: () => void;
+  onOpenHistory?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -14,6 +18,10 @@ export const Header: React.FC<HeaderProps> = ({
   isOnline,
   cashierName,
   onToggleOnline,
+  pendingSyncCount = 0,
+  onTriggerSync,
+  onOpenShiftAudit,
+  onOpenHistory,
 }) => {
   const getInitials = (name: string) => {
     return name
@@ -59,10 +67,45 @@ export const Header: React.FC<HeaderProps> = ({
             {isOnline ? 'Online POS' : 'Offline POS (Lokal)'}
           </Text>
         </Pressable>
+
+        {/* Offline Queue Sync Indicator */}
+        {pendingSyncCount > 0 ? (
+          <Pressable
+            onPress={onTriggerSync}
+            style={({ pressed }) => [styles.syncBadge, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.syncBadgeText}>
+              ⚠️ {pendingSyncCount} Antrean Sync 🔄
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.syncedBadge}>
+            <Text style={styles.syncedBadgeText}>✓ Cloud Synced</Text>
+          </View>
+        )}
       </View>
 
-      {/* Right: Cashier identity */}
+      {/* Right: Audit trigger & Cashier identity */}
       <View style={styles.rightGroup}>
+        {onOpenHistory && (
+          <Pressable
+            onPress={onOpenHistory}
+            style={({ pressed }) => [styles.historyBtn, pressed && { opacity: 0.85 }]}
+            hitSlop={6}
+          >
+            <Text style={styles.historyBtnText}>📋 Riwayat Transaksi</Text>
+          </Pressable>
+        )}
+
+        {onOpenShiftAudit && (
+          <Pressable
+            onPress={onOpenShiftAudit}
+            style={({ pressed }) => [styles.auditTriggerBtn, pressed && { opacity: 0.8 }]}
+          >
+            <Text style={styles.auditTriggerText}>⚖️ Verifikasi / Buka Shift</Text>
+          </Pressable>
+        )}
+
         <View style={styles.cashierInfo}>
           <Text style={styles.cashierName}>{cashierName}</Text>
           <Text style={styles.cashierRole}>Kasir Operasional</Text>
@@ -188,6 +231,57 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.statusOnline,
     borderWidth: 2,
     borderColor: '#FFFFFF',
+  },
+  syncBadge: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: RADII.pill,
+  },
+  syncBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  syncedBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#ECFDF5',
+    borderRadius: RADII.pill,
+  },
+  syncedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#059669',
+  },
+  historyBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.brandEspresso,
+    borderRadius: RADII.btn,
+    marginRight: 6,
+  },
+  historyBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.brandEspresso,
+  },
+  auditTriggerBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#F3EFEA',
+    borderWidth: 1,
+    borderColor: '#E2DBD3',
+    borderRadius: RADII.btn,
+  },
+  auditTriggerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.brandEspresso,
   },
 });
 

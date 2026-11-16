@@ -4,6 +4,11 @@
   "private": true,
   "workspaces": [
     "apps/*"
-  ]
+  ],
+  "scripts": {
+    "pos": "npm --prefix apps/pos run web",
+    "backend": "cd apps/backend && go run main.go",
+    "typecheck": "npm --prefix apps/pos run typecheck"
+  }
 }
 

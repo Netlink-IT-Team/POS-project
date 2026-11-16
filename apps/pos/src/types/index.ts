@@ -41,3 +41,19 @@ export interface TransactionSummary {
   idempotencyKey?: string;
 }
 
+export interface ShiftTransaction {
+  id: string;
+  orderNumber: string;
+  queueNumber: string;
+  items: CartLineItem[];
+  subtotal: number;
+  totalAmount: number;
+  paymentMethod: PaymentMethod;
+  cashReceived?: number;
+  change?: number;
+  qrisRef?: string;
+  timestamp: string;
+  cashierName?: string;
+}
+
+
